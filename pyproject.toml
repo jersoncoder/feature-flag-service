@@ -69,7 +69,7 @@ ignore = [
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = ["src", "tests"]
+files = ["src", "tests", "examples"]
 plugins = ["pydantic.mypy"]
 warn_unreachable = true
 
