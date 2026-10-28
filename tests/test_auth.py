@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from flagservice.server.__main__ import main
 from flagservice.server.auth import sha256_hex
 from flagservice.server.settings import Settings
 from flagservice.tokens import environment_of_token
@@ -143,3 +144,13 @@ def test_credentials_are_checked_before_preconditions(client: TestClient, api: A
     assert client.delete(path).status_code == 401
     assert client.put(f"{path}/environments/production", json={}).status_code == 401
     assert client.put(path, json={}).status_code == 401
+
+
+def test_server_refuses_to_start_without_an_admin_key(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv("FLAGS_ADMIN_KEY", raising=False)
+    with pytest.raises(SystemExit) as exit_info:
+        main([])
+    assert exit_info.value.code == 2
+    assert "FLAGS_ADMIN_KEY is not set" in capsys.readouterr().err

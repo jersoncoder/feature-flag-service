@@ -13,7 +13,6 @@ from __future__ import annotations
 import copy
 import logging
 import threading
-import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from types import TracebackType
@@ -42,9 +41,10 @@ _NOT_LOADED = EvaluationResult(
 
 @dataclass(frozen=True)
 class _Snapshot:
+    """A config and its ETag, swapped in as one reference so readers never see a mix."""
+
     config: EnvironmentConfig
     etag: str | None
-    fetched_at: float
 
 
 class FlagClient:
@@ -83,6 +83,7 @@ class FlagClient:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._failing = False
+        self._closed = False
         if start:
             self.start()
 
@@ -90,6 +91,8 @@ class FlagClient:
 
     def start(self) -> None:
         """Start background polling; the first fetch happens immediately."""
+        if self._closed:
+            raise RuntimeError("this FlagClient is closed")
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop.clear()
@@ -97,7 +100,8 @@ class FlagClient:
         self._thread.start()
 
     def close(self) -> None:
-        """Stop polling. Flags keep evaluating against the last config."""
+        """Stop polling for good. Flags keep evaluating against the last config."""
+        self._closed = True
         self._stop.set()
         if self._thread is not None and self._thread is not threading.current_thread():
             self._thread.join()
@@ -164,7 +168,7 @@ class FlagClient:
             config = parse_environment_config(response.json())
         except ValueError as exc:  # also covers invalid JSON
             return False, f"unreadable config: {exc}"
-        self._snapshot = _Snapshot(config, response.headers.get("ETag"), time.monotonic())
+        self._snapshot = _Snapshot(config, response.headers.get("ETag"))
         self._loaded.set()
         return True, ""
 

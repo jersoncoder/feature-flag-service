@@ -265,6 +265,8 @@ def test_close_stops_polling(server: FakeServer, make_client: Callable[..., Flag
     count = len(server.requests)
     assert not server.wait_for_requests(count + 1, timeout=0.1)
     assert client.bool_value("beta", {}, False) is True  # still serves the last config
+    with pytest.raises(RuntimeError, match="closed"):
+        client.start()
 
 
 def test_close_releases_an_http_client_it_created() -> None:
