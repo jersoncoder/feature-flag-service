@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import re
 import sqlite3
+import time
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -114,6 +115,24 @@ def _has_sql(text: str) -> bool:
     return any(line.strip(" \t;") for line in lines)
 
 
+def _enable_wal(conn: sqlite3.Connection) -> None:
+    """Switch the database to write-ahead logging (a persistent setting).
+
+    The switch needs an exclusive lock and SQLite reports "database is locked"
+    at once, without waiting for the busy timeout, when another connection is
+    doing the same thing; so this retries for up to the busy timeout.
+    """
+    deadline = time.monotonic() + BUSY_TIMEOUT_MS / 1000
+    while True:
+        try:
+            conn.execute("PRAGMA journal_mode = WAL")
+            return
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc) or time.monotonic() > deadline:
+                raise
+            time.sleep(0.01)
+
+
 def migrate(conn: sqlite3.Connection, migrations: Sequence[Migration] | None = None) -> list[int]:
     """Apply pending migrations in order, each in its own transaction.
 
@@ -124,7 +143,7 @@ def migrate(conn: sqlite3.Connection, migrations: Sequence[Migration] | None = N
     """
     if migrations is None:
         migrations = load_migrations()
-    conn.execute("PRAGMA journal_mode = WAL")
+    _enable_wal(conn)
     conn.execute(
         "CREATE TABLE IF NOT EXISTS schema_migrations ("
         " version INTEGER PRIMARY KEY,"
