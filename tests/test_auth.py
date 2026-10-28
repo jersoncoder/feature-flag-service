@@ -134,3 +134,12 @@ def test_settings_from_environment() -> None:
     settings = Settings.from_env({"FLAGS_ADMIN_KEY": ADMIN_KEY, "FLAGS_DATABASE": "/data/f.db"})
     assert str(settings.database_path) == "/data/f.db"
     assert str(Settings.from_env({"FLAGS_ADMIN_KEY": ADMIN_KEY}).database_path) == "flags.db"
+
+
+def test_credentials_are_checked_before_preconditions(client: TestClient, api: Api) -> None:
+    api.project()
+    api.flag({"key": "beta", "type": "boolean"})
+    path = "/v1/projects/shop/flags/beta"
+    assert client.delete(path).status_code == 401
+    assert client.put(f"{path}/environments/production", json={}).status_code == 401
+    assert client.put(path, json={}).status_code == 401

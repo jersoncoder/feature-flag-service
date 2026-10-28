@@ -15,6 +15,9 @@ from flagservice.server.deps import Admin, IfMatch, StoreDep
 
 router = APIRouter(prefix="/v1/projects", tags=["management"])
 
+# FastAPI resolves dependencies in parameter order, so ``admin`` comes before
+# ``tags`` everywhere: an unauthenticated request gets 401, not 428.
+
 _FLAG_ETAG: dict[str, Any] = {
     "ETag": {"description": "The flag's version; send it back in If-Match to change the flag."}
 }
@@ -176,8 +179,8 @@ def update_flag(
     project: str,
     flag: str,
     body: schemas.FlagUpdate,
-    tags: IfMatch,
     admin: Admin,
+    tags: IfMatch,
     store: StoreDep,
     response: Response,
 ) -> schemas.Flag:
@@ -196,8 +199,8 @@ def update_flag_environment(
     flag: str,
     environment: str,
     body: EnvironmentSettings,
-    tags: IfMatch,
     admin: Admin,
+    tags: IfMatch,
     store: StoreDep,
     response: Response,
 ) -> schemas.Flag:
@@ -210,7 +213,7 @@ def update_flag_environment(
 @router.delete(
     "/{project}/flags/{flag}", status_code=status.HTTP_204_NO_CONTENT, responses=_CONDITIONAL
 )
-def delete_flag(project: str, flag: str, tags: IfMatch, admin: Admin, store: StoreDep) -> None:
+def delete_flag(project: str, flag: str, admin: Admin, tags: IfMatch, store: StoreDep) -> None:
     """Delete a flag in every environment. Needs If-Match."""
     store.delete_flag(project, flag, tags, admin.actor)
 
