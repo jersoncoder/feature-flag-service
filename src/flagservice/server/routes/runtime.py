@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Annotated
 
 from fastapi import APIRouter, Header, HTTPException, Response, status
@@ -10,8 +11,24 @@ from flagservice.core.evaluate import evaluate
 from flagservice.server import schemas
 from flagservice.server.deps import SdkKey, ServerKey, StoreDep
 from flagservice.server.etags import MalformedHeader, parse_tags, weak_match
+from flagservice.server.store import Store
 
 router = APIRouter(tags=["runtime"])
+
+
+def evaluate_in_environment(
+    store: Store, environment_id: int, flag_key: str, context: Mapping[str, object]
+) -> schemas.EvaluateResponse:
+    """Server-side evaluation: the flag's config as the database holds it, then the core."""
+    result = evaluate(store.flag_config(environment_id, flag_key), context)
+    return schemas.EvaluateResponse(
+        flag=flag_key,
+        variant=result.variant,
+        value=result.value,
+        reason=result.reason,
+        rule_index=result.rule_index,
+        error=result.error,
+    )
 
 
 @router.post("/v1/evaluate")
@@ -24,15 +41,7 @@ def evaluate_flag(
     (FLAG_NOT_FOUND or ERROR), the same way the SDK reports it.
     """
     assert key.environment_id is not None
-    result = evaluate(store.flag_config(key.environment_id, body.flag), body.context)
-    return schemas.EvaluateResponse(
-        flag=body.flag,
-        variant=result.variant,
-        value=result.value,
-        reason=result.reason,
-        rule_index=result.rule_index,
-        error=result.error,
-    )
+    return evaluate_in_environment(store, key.environment_id, body.flag, body.context)
 
 
 @router.get(

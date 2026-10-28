@@ -6,32 +6,24 @@ There are three kinds of credential, each accepted only by its own endpoints:
 * server keys, for ``POST /v1/evaluate``;
 * SDK keys, for ``GET /v1/environments/{env}/config``.
 
-Server and SDK keys belong to one environment. A token looks like
-``sdk.env_0123456789ab.key_0123456789ab.<secret>``: the kind, the public id of
-the environment (so the SDK can build its URL from the key alone), the key id
-(public, used to find the record and as the audit actor) and 256 random bits.
-Only the SHA-256 of the whole token is stored. A slow password hash would add
-nothing here, because the secret is random rather than chosen by a person.
+Server and SDK keys belong to one environment; their format is in
+``flagservice.tokens``. Only the SHA-256 of the whole token is stored, and the
+key id doubles as the audit actor. A slow password hash would add nothing here,
+because the secret is random rather than chosen by a person.
 """
 
 from __future__ import annotations
 
 import hashlib
 import hmac
-import re
 import secrets
 import sqlite3
 from dataclasses import dataclass
 from typing import Literal
 
-KeyKind = Literal["server", "sdk"]
-PrincipalKind = Literal["admin", "server", "sdk"]
+from flagservice.tokens import KIND_BY_PREFIX, PREFIX, TOKEN, KeyKind
 
-_PREFIX: dict[KeyKind, str] = {"server": "srv", "sdk": "sdk"}
-_KIND_BY_PREFIX: dict[str, KeyKind] = {prefix: kind for kind, prefix in _PREFIX.items()}
-_TOKEN = re.compile(
-    r"(?P<prefix>srv|sdk)\.(?P<env>env_[0-9a-f]{12})\.(?P<key>key_[0-9a-f]{12})\.[A-Za-z0-9_-]{43}"
-)
+PrincipalKind = Literal["admin", "server", "sdk"]
 
 ADMIN_ACTOR = "admin"
 
@@ -62,14 +54,8 @@ def new_public_id(prefix: str) -> str:
 
 def issue_key(kind: KeyKind, environment_public_id: str) -> IssuedKey:
     key_id = new_public_id("key")
-    token = f"{_PREFIX[kind]}.{environment_public_id}.{key_id}.{secrets.token_urlsafe(32)}"
+    token = f"{PREFIX[kind]}.{environment_public_id}.{key_id}.{secrets.token_urlsafe(32)}"
     return IssuedKey(key_id=key_id, token=token, token_sha256=sha256_hex(token))
-
-
-def environment_of_token(token: str) -> str | None:
-    """The environment public id a server or SDK token belongs to, if it is well formed."""
-    match = _TOKEN.fullmatch(token)
-    return match.group("env") if match else None
 
 
 def authenticate(conn: sqlite3.Connection, token: str, admin_key: str) -> Principal | None:
@@ -77,7 +63,7 @@ def authenticate(conn: sqlite3.Connection, token: str, admin_key: str) -> Princi
     # Comparing digests keeps the comparison constant-time and independent of length.
     if hmac.compare_digest(sha256_hex(token), sha256_hex(admin_key)):
         return Principal(kind="admin", actor=ADMIN_ACTOR)
-    match = _TOKEN.fullmatch(token)
+    match = TOKEN.fullmatch(token)
     if match is None:
         return None
     row = conn.execute(
@@ -92,7 +78,7 @@ def authenticate(conn: sqlite3.Connection, token: str, admin_key: str) -> Princi
         return None
     # The hash covers the whole token, so a matching hash means the prefix and the
     # environment in the token are the ones issued; these checks are defensive.
-    if row["kind"] != _KIND_BY_PREFIX[match.group("prefix")]:
+    if row["kind"] != KIND_BY_PREFIX[match.group("prefix")]:
         return None
     if row["public_id"] != match.group("env"):
         return None

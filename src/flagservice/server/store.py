@@ -22,7 +22,7 @@ from pydantic import BaseModel, ValidationError
 from flagservice.core.model import EnvironmentSettings, FlagConfig, InvalidFlag, Variant
 from flagservice.core.validation import Problem, settings_problems, variant_problems
 from flagservice.server import schemas
-from flagservice.server.auth import KeyKind, issue_key, new_public_id
+from flagservice.server.auth import issue_key, new_public_id
 from flagservice.server.db import transaction, utcnow
 from flagservice.server.errors import (
     BadRequest,
@@ -32,6 +32,7 @@ from flagservice.server.errors import (
     PreconditionFailed,
 )
 from flagservice.server.etags import content_etag, flag_etag, strong_match
+from flagservice.tokens import KeyKind
 
 BOOLEAN_VARIANTS = (Variant(key="off", value=False), Variant(key="on", value=True))
 

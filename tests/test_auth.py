@@ -9,8 +9,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from flagservice.server.auth import environment_of_token, sha256_hex
+from flagservice.server.auth import sha256_hex
 from flagservice.server.settings import Settings
+from flagservice.tokens import environment_of_token
 from helpers import ADMIN_KEY, Api, bearer
 
 
@@ -117,6 +118,8 @@ def test_only_hashes_are_stored(settings: Settings, tokens: dict[str, str]) -> N
 
 def test_token_names_its_environment(api: Api, tokens: dict[str, str]) -> None:
     assert environment_of_token(tokens["sdk"]) == api.environment_id()
+    assert environment_of_token(tokens["sdk"], "sdk") == api.environment_id()
+    assert environment_of_token(tokens["sdk"], "server") is None
     assert environment_of_token("sdk.nope") is None
 
 

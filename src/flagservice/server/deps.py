@@ -18,8 +18,11 @@ from flagservice.server.etags import MalformedHeader, parse_tags
 from flagservice.server.settings import Settings
 from flagservice.server.store import Store
 
+# Dependencies that only touch memory are ``async def`` so FastAPI runs them on
+# the event loop; ``def`` dependencies (the database ones) go to a worker thread.
 
-def get_settings(request: Request) -> Settings:
+
+async def get_settings(request: Request) -> Settings:
     settings: Settings = request.app.state.settings
     return settings
 
@@ -35,7 +38,7 @@ def get_conn(settings: Annotated[Settings, Depends(get_settings)]) -> Iterator[s
 Conn = Annotated[sqlite3.Connection, Depends(get_conn)]
 
 
-def get_store(conn: Conn) -> Store:
+async def get_store(conn: Conn) -> Store:
     return Store(conn)
 
 
@@ -96,7 +99,7 @@ ServerKey = Annotated[Principal, Depends(_require("server"))]
 SdkKey = Annotated[Principal, Depends(_require("sdk"))]
 
 
-def if_match(
+async def if_match(
     header: Annotated[
         str | None,
         Header(
