@@ -6,6 +6,9 @@ import math
 from collections.abc import Sequence
 from typing import Any
 
+from fastapi.testclient import TestClient
+from httpx2 import Response
+
 from flagservice.core.model import FlagConfig
 
 
@@ -64,3 +67,83 @@ def chi_square_sf(statistic: float, dof: int) -> float:
         return min(1.0, sum(term(i) for i in range(dof // 2)))
     tail = math.erfc(math.sqrt(half))
     return min(1.0, tail + sum(term(i - 0.5) for i in range(1, (dof - 1) // 2 + 1)))
+
+
+# HTTP helpers
+
+ADMIN_KEY = "admin-key-for-tests-0123456789abcdef"
+
+
+def bearer(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
+ADMIN = bearer(ADMIN_KEY)
+
+
+class Api:
+    """Thin wrappers over the management API that fail loudly on unexpected statuses."""
+
+    def __init__(self, client: TestClient) -> None:
+        self.client = client
+
+    def post(self, path: str, body: Any, expect: int = 201) -> Any:
+        response = self.client.post(path, json=body, headers=ADMIN)
+        assert response.status_code == expect, response.text
+        return response.json()
+
+    def project(
+        self, key: str = "shop", environments: Sequence[str] = ("staging", "production")
+    ) -> None:
+        self.post("/v1/projects", {"key": key, "name": key.title()})
+        for environment in environments:
+            self.post(f"/v1/projects/{key}/environments", {"key": environment, "name": environment})
+
+    def key(self, kind: str, environment: str = "production", project: str = "shop") -> str:
+        body = self.post(f"/v1/projects/{project}/environments/{environment}/keys", {"kind": kind})
+        token: str = body["token"]
+        return token
+
+    def environment_id(self, environment: str = "production", project: str = "shop") -> str:
+        response = self.client.get(
+            f"/v1/projects/{project}/environments/{environment}", headers=ADMIN
+        )
+        assert response.status_code == 200, response.text
+        public_id: str = response.json()["id"]
+        return public_id
+
+    def flag(self, body: dict[str, Any], project: str = "shop") -> tuple[dict[str, Any], str]:
+        response = self.client.post(f"/v1/projects/{project}/flags", json=body, headers=ADMIN)
+        assert response.status_code == 201, response.text
+        return response.json(), response.headers["ETag"]
+
+    def get_flag(self, key: str, project: str = "shop") -> tuple[dict[str, Any], str]:
+        response = self.client.get(f"/v1/projects/{project}/flags/{key}", headers=ADMIN)
+        assert response.status_code == 200, response.text
+        return response.json(), response.headers["ETag"]
+
+    def put_settings(
+        self,
+        flag: str,
+        environment: str,
+        settings: dict[str, Any],
+        etag: str | None,
+        project: str = "shop",
+    ) -> Response:
+        headers = dict(ADMIN)
+        if etag is not None:
+            headers["If-Match"] = etag
+        return self.client.put(
+            f"/v1/projects/{project}/flags/{flag}/environments/{environment}",
+            json=settings,
+            headers=headers,
+        )
+
+    def set_settings(
+        self, flag: str, environment: str, settings: dict[str, Any], project: str = "shop"
+    ) -> str:
+        """Replace settings using the current ETag; returns the new ETag."""
+        _, etag = self.get_flag(flag, project)
+        response = self.put_settings(flag, environment, settings, etag, project)
+        assert response.status_code == 200, response.text
+        return response.headers["ETag"]

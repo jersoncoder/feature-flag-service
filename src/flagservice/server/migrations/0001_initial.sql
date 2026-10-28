@@ -4,6 +4,10 @@
 -- rules and audit snapshots are JSON documents validated by the application
 -- before they are written.
 
+-- AUTOINCREMENT on projects and flags keeps ids from being reused after a
+-- delete: audit entries outlive their project and refer to it by id, and flag
+-- ETags include the flag id, so a flag created again under the same key never
+-- accepts an ETag of the old one.
 CREATE TABLE projects (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     key         TEXT NOT NULL UNIQUE,
@@ -35,8 +39,6 @@ CREATE TABLE api_keys (
 
 CREATE INDEX api_keys_environment ON api_keys (environment_id);
 
--- AUTOINCREMENT keeps ids from being reused after a delete, because flag ETags
--- include the id: a recreated flag must never accept an ETag of the old one.
 CREATE TABLE flags (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id  INTEGER NOT NULL REFERENCES projects (id),
